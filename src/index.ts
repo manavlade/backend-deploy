@@ -1,18 +1,53 @@
-import express from "express";
-import { prisma } from "./config/prisma";
+import express from 'express';
+import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+
+import authRoutes from './routes/auth.route.js';
+
+import {prisma} from './config/prisma.js';
+
+dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
-app.get("/", (req, res) => {
-  res.send("Backend Running");
-});
+app.use(express.json());
+app.use(cookieParser());
 
-app.get("/users", async (req, res) => {
-  const users = await prisma.user.findMany();
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
 
-  res.json(users);
-});
+app.use("/api/v1/auth", authRoutes);
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
-});
+// app.use("/api/v1/notes", notesRoutes);
+
+const startServer = async () => {
+
+  try {
+
+    await prisma.$connect();
+
+    console.log("✅ Database connected successfully");
+
+    app.listen(PORT, () => {
+      console.log(
+        `🚀 Server running on port ${PORT}`
+      );
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    process.exit(1);
+  }
+};
+
+startServer();
+
+
