@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 
 import authRoutes from './routes/auth.route.js';
+import notesRoutes from './routes/notes.route.js';
 
 import {prisma} from './config/prisma.js';
 
@@ -24,7 +25,7 @@ app.use(
 
 app.use("/api/v1/auth", authRoutes);
 
-// app.use("/api/v1/notes", notesRoutes);
+app.use("/api/v1/notes", notesRoutes);
 
 const startServer = async () => {
 
