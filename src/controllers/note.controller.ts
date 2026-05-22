@@ -10,12 +10,20 @@ export const createNote = async (
 
   try {
 
-    const { title, content } = req.body;
+    const { title, amount, content } = req.body;
 
     const userId = req.user?.userId as string;
 
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image is required",
+      });
+    }
+
     const result = await createNoteService(
       title,
+      amount,
       content,
       req.file,
       userId
@@ -110,13 +118,14 @@ export const updateNote = async (
 
     const { noteId } = req.params;
 
-    const { title, content } = req.body || {};
+    const { title, amount, content } = req.body || {};
 
     const userId = req.user?.userId as string;
 
     const result = await updateNoteService(
       noteId,
       title,
+      amount,
       content,
       req.file,
       userId

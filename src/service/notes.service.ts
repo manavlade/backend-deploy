@@ -1,21 +1,39 @@
-import {prisma} from "../config/prisma.js";
+import { prisma } from "../config/prisma.js";
 
 import { uploadImage } from "../utils/uploadImage.js";
 
 import client from "../config/imagekit.js";
+import Decimal from "decimal.js";
 
 export const createNoteService = async (
     title: string,
-    content: string,
-    file: Express.Multer.File | undefined,
+    amount: number,
+    content: string | undefined,
+    file: Express.Multer.File,
     userId: string
 ) => {
 
-    if (!title || !content) {
+    if (!title?.trim()) {
         return {
             success: false,
             statusCode: 400,
-            message: "Title and content are required",
+            message: "Title is required",
+        };
+    }
+
+    if (amount === undefined || amount === null) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: "Amount is required",
+        };
+    }
+
+    if (!file) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: "Image is required",
         };
     }
 
@@ -27,7 +45,7 @@ export const createNoteService = async (
         };
     }
 
-    if (content.length < 5 || content.length > 1000) {
+    if (content && (content.length < 5 || content.length > 1000)) {
         return {
             success: false,
             statusCode: 400,
@@ -35,40 +53,38 @@ export const createNoteService = async (
         };
     }
 
-    let imageUrl: string | undefined = undefined;
-    let imageFieldId: string | undefined = undefined;
+    const allowedMimeTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/jpg",
+        "image/webp",
+    ];
 
-    if (file) {
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: "Only jpeg, jpg, png and webp allowed",
+        };
+    }
 
-        const allowedMimeTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
-        if (!allowedMimeTypes.includes(file.mimetype)) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: "Only image files are allowed (jpeg, jpg, png, webp)",
-            };
-        }
+    const uploadedImage = await uploadImage(file);
 
-        const uploadedImage = await uploadImage(file);
-
-        if (!uploadedImage.success) {
-            return {
-                success: false,
-                statusCode: 500,
-                message: "Image upload failed",
-            };
-        }
-
-        imageUrl = uploadedImage.url as string;
-        imageFieldId = uploadedImage.fileId as string;
+    if (!uploadedImage.success) {
+        return {
+            success: false,
+            statusCode: 500,
+            message: "Image upload failed",
+        };
     }
 
     const note = await prisma.note.create({
         data: {
-            title,
-            content,
-            imageUrl,
-            imageFieldId,
+            title: title.trim(),
+            amount: new Decimal(amount),
+            content: content?.trim(),
+            imageUrl: uploadedImage.url as string,
+            imageFieldId: uploadedImage.fileId as string,
             userId,
         },
     });
@@ -139,8 +155,9 @@ export const getSingleNoteService = async (
 
 export const updateNoteService = async (
     noteId: string,
-    title: string,
-    content: string,
+    title: string | undefined,
+    amount: number | undefined,
+    content: string | undefined,
     file: Express.Multer.File | undefined,
     userId: string
 ) => {
@@ -168,7 +185,10 @@ export const updateNoteService = async (
         };
     }
 
-    if (title) {
+    const updateData: any = {};
+
+    if (title !== undefined) {
+
         if (title.length < 3 || title.length > 100) {
             return {
                 success: false,
@@ -176,9 +196,25 @@ export const updateNoteService = async (
                 message: "Title must be between 3 and 100 characters",
             };
         }
+
+        updateData.title = title.trim();
     }
 
-    if (content) {
+    if (amount !== undefined) {
+
+        if (amount < 0) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: "Amount cannot be negative",
+            };
+        }
+
+        updateData.amount = new Decimal(amount);
+    }
+
+    if (content !== undefined) {
+
         if (content.length < 5 || content.length > 1000) {
             return {
                 success: false,
@@ -186,43 +222,47 @@ export const updateNoteService = async (
                 message: "Content must be between 5 and 1000 characters",
             };
         }
-    }
 
-    let imageUrl = existingNote.imageUrl;
-    let imageFieldId = existingNote.imageFieldId;
+        updateData.content = content.trim();
+    }
 
     if (file) {
 
-        const allowedMimeTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
+        const allowedMimeTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/jpg",
+            "image/webp",
+        ];
+
         if (!allowedMimeTypes.includes(file.mimetype)) {
             return {
                 success: false,
                 statusCode: 400,
-                message: "Only image files are allowed (jpeg, jpg, png, webp)",
+                message: "Only image files are allowed",
             };
         }
 
-        if (existingNote.imageFieldId) {
+        try {
 
-            try {
+            if (existingNote.imageFieldId) {
 
                 await client.files.delete(
                     existingNote.imageFieldId
                 );
-
-            } catch (error) {
-
-                console.log(
-                    "Failed to delete old image",
-                    error
-                );
             }
+
+        } catch (error) {
+
+            console.log(
+                "Failed to delete old image",
+                error
+            );
         }
 
         const uploadedImage = await uploadImage(file);
 
         if (!uploadedImage.success) {
-
             return {
                 success: false,
                 statusCode: 500,
@@ -230,9 +270,8 @@ export const updateNoteService = async (
             };
         }
 
-        imageUrl = uploadedImage.url as string;
-
-        imageFieldId = uploadedImage.fileId as string;
+        updateData.imageUrl = uploadedImage.url;
+        updateData.imageFieldId = uploadedImage.fileId;
     }
 
     const updatedNote = await prisma.note.update({
@@ -240,13 +279,7 @@ export const updateNoteService = async (
             id: noteId,
         },
 
-        data: {
-            title,
-            content,
-
-            imageUrl,
-            imageFieldId,
-        },
+        data: updateData,
     });
 
     return {
